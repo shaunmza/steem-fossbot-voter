@@ -333,6 +333,10 @@ app.get("/stats", function(req, res) {
     return;
   }
   console.log("req.session.api_key = "+req.session.api_key);
+  execStats(req, res);
+});
+
+function execStats(req, res) {
   lib.getPostsMetadataKeys(function(err, keys) {
     var html = "";
     if (err || keys == null || keys.length < 1) {
@@ -351,12 +355,12 @@ app.get("/stats", function(req, res) {
             "Votes for " + dateTime.format("MMM Do YYYY") + "</a></li>";
         }
         html += "<li><a href=\"/stats?pd_key="+keys[i].key+"&time="+keys[i].date+"\">" +
-            " --- --- " + dateTime.format("HH:mm") + "</a></li>";
+          " --- --- " + dateTime.format("HH:mm") + "</a></li>";
       }
     }
     if (req.query.date_str) {
-      lib.getPersistentJson("daily_liked_posts", function(dailyLikedPostsResult) {
-        if (dailyLikedPostsResult == null) {
+      lib.getPersistentJson("daily_liked_posts", function(err, dailyLikedPostsResult) {
+        if (err === undefined || dailyLikedPostsResult === undefined || dailyLikedPostsResult == null) {
           res.status(200).send(
             createMsgPageHTML("Stats", "No data for daily liked posts, there may be an internal data inconsistency or corrupt key (err stage 1)"));
           return;
@@ -406,13 +410,13 @@ app.get("/stats", function(req, res) {
         if (postsMetadata.length > 0) {
           for (var i = 0 ; i < postsMetadata.length ; i++) {
             html_list += "<tr><td><a href=\""+postsMetadata[i].url+"\">"+postsMetadata[i].title+"</a></td><td>"+postsMetadata[i].score+"</td>"
-                + "<td>"+(postsMetadata[i].vote ? "YES" : "NO")+"</td></tr>";
+              + "<td>"+(postsMetadata[i].vote ? "YES" : "NO")+"</td></tr>";
           }
         } else {
           html_list = html_test_emptyList;
         }
         res.status(200).send(
-          html_stats_run1 
+          html_stats_run1
           + html
           + html_stats_run2
           + "Bot run details for run at " + (moment_tz.tz(Number(req.query.time), lib.getConfigVars().TIME_ZONE).format("MMM Do YYYY HH:mm"))
@@ -422,15 +426,15 @@ app.get("/stats", function(req, res) {
       });
     } else {
       res.status(200).send(
-        html_stats1 
+        html_stats1
         + html
         + html_stats2
         + "<p>To see record and proof of voting, visit <a href=\"https://steemd.com/@"+process.env.STEEM_USER
-            +"\">https://steemd.com/@"+process.env.STEEM_USER+"</a></p>"
+        +"\">https://steemd.com/@"+process.env.STEEM_USER+"</a></p>"
         + html_stats3);
     }
   });
-});
+}
 
 /*
 * /stats
@@ -454,8 +458,8 @@ app.get("/last-log", function(req, res) {
     handleError(res, "/stats Unauthorized", "stats: session is invalid (out of date session key), please restart from Dashboard", 401);
     return;
   }
-  lib.getPersistentString("last_log_html", function(logs) {
-    if (logs == null) {
+  lib.getPersistentString("last_log_html", function(err, logs) {
+    if (err !== undefined || logs == null) {
       var html_logs = createMsgPageHTML("Last log", "No logs yet, please run bot for first time!");
       res.status(200).send(html_logs);
       return;
@@ -604,11 +608,11 @@ app.get("/get-algo", function(req, res) {
     handleError(res, "/stats-data-json Unauthorized", "stats-data-json: session_key invalid", 401);
     return;
   }
-  lib.getPersistentJson("algorithm", function(algorithm) {
+  lib.getPersistentJson("algorithm", function(err, algorithm) {
     console.log("attempted to get algorithm: "+algorithm);
     if (algorithm != null) {
       res.json(JSON.stringify(algorithm));
-    } else {
+    } else if (err === undefined || algorithm === undefined || algorithm == null) {
       handleErrorJson(res, "/get-algo Server error", "get-algo: no data in store", 500);
     }
   });
@@ -625,8 +629,8 @@ app.get("/get-daily-liked-posts", function(req, res) {
     handleError(res, "/get-daily-liked-posts Unauthorized", "get-daily-liked-posts: session_key invalid", 401);
     return;
   }
-  lib.getPersistentJson("daily_liked_posts", function(dailyLikedPostsResults) {
-    if (dailyLikedPostsResults == null) {
+  lib.getPersistentJson("daily_liked_posts", function(err, dailyLikedPostsResults) {
+    if (err === undefined || dailyLikedPostsResults == null) {
       handleErrorJson(res, "/get-daily-liked-posts Server error", "get-daily-liked-posts: no data in store", 500);
       return;
     }
@@ -675,8 +679,8 @@ app.get("/run-bot", function(req, res) {
     handleError(res, "/stats Unauthorized", "stats: session is invalid (out of date session key), please restart from Dashboard", 401);
     return;
   }
-  lib.getPersistentJson("algorithm", function(algo) {
-    if (algo == null) {
+  lib.getPersistentJson("algorithm", function(err, algo) {
+    if (err === undefined || algo == null) {
       res.status(200).send(
         createMsgPageHTML("Run Bot", "Algorithm is not yet set!<br/>Go to <strong>Edit Algo</strong> from the dashboard to create it."));
       return;
@@ -689,7 +693,7 @@ app.get("/run-bot", function(req, res) {
           res.status(obj.status).json(obj);
         } else {
           // default to show in logs (same as /stats endpoint)
-          lib.getPersistentString("last_log_html", function(logs) {
+          lib.getPersistentString("last_log_html", function(err, logs) {
             var html_logs = "<html><body><h1>No logs yet, please run bot for first time!</h1></body></html>";
             if (logs != null) {
               html_logs = logs;
@@ -698,8 +702,10 @@ app.get("/run-bot", function(req, res) {
               if (err) {
                 handleError(res, "can't save temp file", "/stats: can't save temp file", 500);
               } else {
-                res.status(200).send(
-                  createMsgPageHTML("Run bot success", html_msg_run_bot_body));
+                // #2, redirect to stats page instead
+                execStats(req, res);
+                //res.status(200).send(
+                //  createMsgPageHTML("Run bot success", html_msg_run_bot_body));
               }
             });
           });
@@ -842,8 +848,10 @@ app.post("/edit-algo", bodyParser.urlencoded({extended: false}), function(req, r
     }
     console.log(" - update algorithm");
     lib.persistJson("algorithm", JSON.parse(req.body.json_algo), function(err) {
-      console.log(" - - ERROR SAVING algorithm");
-      // TODO : show this on page
+      if (err !== undefined) {
+        console.log(" - - ERROR SAVING algorithm");
+        // TODO : show this on page
+      }
     });
     editAlgoExec(res, "<h2 class=\"sub-header\">Imported algorithm</h2>");  
     return;
@@ -868,12 +876,12 @@ app.post("/edit-algo", bodyParser.urlencoded({extended: false}), function(req, r
 });
 
 function editAlgoExec(res, message) {
-  lib.getPersistentJson("algorithm", function(algorithmResult) {
+  lib.getPersistentJson("algorithm", function(err, algorithmResult) {
     var algorithm = {};
     if (algorithmResult != null) {
       algorithm = algorithmResult;
       console.log(" - got algorithm from redis store: "+JSON.stringify(algorithm));
-    } else {
+    } else if (err !== undefined || algorithmResult === undefined || algorithmResult == null) {
       console.log(" - no algorithm in redis store, USING DEFAULT");
       // TODO : remove this default algorithm setting
       algorithm = {
@@ -1247,7 +1255,6 @@ app.post("/edit-config", bodyParser.urlencoded({extended: false}), function(req,
     + html_edit_config2
   );
 });
-
 
 app.get("/api-error", function(req, res) {
   var title = "Api Error";

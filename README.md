@@ -20,7 +20,9 @@ This means _you own the server_ and control it completely. There are no fees or 
 
 You control the running of the bot, set the algorithm and view stats and logs with a simple web dashboard, which will be live at your Heroku URL. See [Usage](https://github.com/Steem-FOSSbot/steem-fossbot-voter#usage) below for more details.
 
-More apps are planned to integrate with this system, which we've called the **Steem FOSSbot ecosystem**. Check out [the doc on Steem FOSSbot](/docs/ecosystem.md) and [our ethos](/docs/ethos.md).
+A plugin system has been proposed and will hopefully be implemented. Please refer to [the ticket](https://github.com/Steem-FOSSbot/project-tracker/issues/8) on the main [Steem FOSSbot organization project-tracker](https://github.com/Steem-FOSSbot/project-tracker) for more information. 
+
+Lastly, check out [our ethos](/docs/ethos.md). Bots can be a divisive subject and this document clearly lays out our position.
 
 ## How it works
 
@@ -111,7 +113,11 @@ Finally, as mentioned in the [discussion](/docs/discussion.md), this project is 
 
 ## Changelog
 
-- 0.2.1 to 0.2.4
+- v0.2.6
+  - First main round of bug fixes for milestone [Public beta bug fixes and minor improvements](https://github.com/Steem-FOSSbot/steem-fossbot-voter/milestone/1)
+  - #2, #56, #31, #25, #26, #49, #52, #44, #10, #53
+- v0.2.1 to v0.2.5
+  - v0.2.5, updated patch to fix bot.js not exiting when finished if run locally
   - v0.2.4, patch to implement missing POST /edit-config endpoint
   - v0.2.3, patch to fix bot.js not exiting when finished if run locally
   - v0.2.2, patch to fix express warnings as they prevent correct operation on some local instances
