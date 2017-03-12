@@ -228,8 +228,13 @@ function runBot(callback, options) {
       var deferred = Q.defer();
       // update average window details
       getPersistentJson("avg_window_info", function(err, info) {
-        if (err) {
+        if (err || info === undefined || info == null) {
           persistentLog(" - no avgWindowInfo in redis store, probably first time bot run");
+          avgWindowInfo = {
+            scoreThreshold: 0,
+            postScores: [],
+            windowSize: configVars.NUM_POSTS_FOR_AVG_WINDOW
+          };
         } else {
           avgWindowInfo = info;
           persistentLog(" - updated avgWindowInfo from redis store: "+JSON.stringify(avgWindowInfo));
@@ -1632,7 +1637,12 @@ function getPosts_recursive(posts, stopAtPost, limit, callback) {
     //    last page
     var limitReached = false;
     for (var i = (query.start_permlink === undefined ? 0 : 1) ; i < postsResult.length ; i++) {
-      if (stopAtPost !== undefined && postsResult[i].id == stopAtPost.id) {
+      // #57, check for null post in list
+      if (postsResult[i] === undefined || postsResult[i] == null) {
+        persistentLog("getPosts_recursive, a post object is null, skipping");
+        continue;
+      }
+      if (stopAtPost !== undefined && stopAtPost != null && postsResult[i].id == stopAtPost.id) {
         persistentLog("getPosts_recursive, limit reached at last post");
         limitReached = true;
         break;
@@ -1811,6 +1821,8 @@ function deleteWeightMetric(key, apiKey, callback) {
   }
   getPersistentJson("algorithm", function(err, algorithmResult) {
     if (err) {
+      console.log(" - coudln't from redis store, using local version");
+    } else {
       algorithm = algorithmResult;
       console.log(" - updated algorithm from redis store: "+JSON.stringify(algorithm));
     }
@@ -1844,6 +1856,21 @@ function updateMetricList(list, contents, apiKey, callback) {
   var parts = S(contents.replace("  ", " ")).splitLeft(" ");
   getPersistentJson("algorithm", function(err, algorithmResult) {
     if (err) {
+      console.log(" - coudln't from redis store, using local version");
+      if (algorithm === undefined || algorithm == null) {
+        algorithm = {
+          weights: [],
+          authorWhitelist: [],
+          authorBlacklist: [],
+          contentCategoryWhitelist: [],
+          contentCategoryBlacklist: [],
+          contentWordWhitelist: [],
+          contentWordBlacklist: [],
+          domainWhitelist: [],
+          domainBlacklist: []
+        };
+      }
+    } else {
       algorithm = algorithmResult;
       console.log(" - updated algorithm from redis store: "+JSON.stringify(algorithm));
     }
@@ -1859,29 +1886,33 @@ function savePostsMetadata(postsMetadataObj, callback) {
   console.log("savePostsMetadata");
   redisClient.get("postsMetadata_keys", function(err, keys) {
     var toKeep = [];
-    if (err) {
-      console.log(" - postsMetadata_keys doesn't exist, probably first time run, will create newly");
+    if (err || keys === undefined || keys == null) {
+      console.log(" - postsMetadata_keys doesn't exist, probably first time run");
     } else {
       var keysObj = JSON.parse(keys);
-      console.log(" - removing old keys");
-      // mark old keys for deletion, to clear space before saving
-      var toDelete = [];
-      for (var i = 0 ; i < keysObj.keys.length ; i++) {
-        if (((new Date()).getTime() - keysObj.keys[i].date) > (configVars.DAYS_KEEP_LOGS * MILLIS_IN_DAY)) {
-          toDelete.push(keysObj.keys[i].key);
-        } else {
-          toKeep.push(keysObj.keys[i]);
+      if (keysObj == null) {
+        console.log(" - postsMetadata_keys couldn't be parsed, probably first time run");
+      } else {
+        console.log(" - removing old keys");
+        // mark old keys for deletion, to clear space before saving
+        var toDelete = [];
+        for (var i = 0 ; i < keysObj.keys.length ; i++) {
+          if (((new Date()).getTime() - keysObj.keys[i].date) > (configVars.DAYS_KEEP_LOGS * MILLIS_IN_DAY)) {
+            toDelete.push(keysObj.keys[i].key);
+          } else {
+            toKeep.push(keysObj.keys[i]);
+          }
         }
+        console.log(" - - keeping "+toKeep.length+" keys");
+        console.log(" - - deleting "+toDelete.length+" keys");
+        redisClient.del(toDelete, function(err, delResult) {
+          if (err || delResult < 1) {
+            console.log(" - - - COULDNT delete redis keys: "+JSON.stringify(toDelete))
+          } else {
+            console.log(" - - - deleted redis keys: "+JSON.stringify(toDelete));
+          }
+        });
       }
-      console.log(" - - keeping "+toKeep.length+" keys");
-      console.log(" - - deleting "+toDelete.length+" keys");
-      redisClient.del(toDelete, function(err, delResult) {
-        if (err || delResult < 1) {
-          console.log(" - - - COULDNT delete redis keys: "+JSON.stringify(toDelete))
-        } else {
-          console.log(" - - - deleted redis keys: "+JSON.stringify(toDelete));
-        }
-      });
     }
     var stringifiedJson = JSON.stringify(postsMetadataObj);
     var key = extra.calcMD5(stringifiedJson);
@@ -2044,7 +2075,8 @@ sendEmail(subject, message)
 function sendEmail(subject, message, isHtml, callback) {
 	if (!process.env.SENDGRID_API_KEY || !process.env.EMAIL_ADDRESS_TO
     || process.env.EMAIL_ADDRESS_TO.localeCompare("none") == 0) {
-		setError(null, false, "Can't send email, config vars not set. Subject: "+subject);
+		persistentLog("Can't send email, config vars not set. Subject: "+subject);
+		callback();
 		return false;
 	}
   console.log("sendEmail to:"+process.env.EMAIL_ADDRESS_TO+", subject: "+subject);
