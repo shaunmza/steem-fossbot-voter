@@ -1118,7 +1118,7 @@ function runBot(callback, options) {
                 try {
                   var upvoteResult = wait.for(steem.broadcast.vote, process.env.POSTING_KEY_PRV,
                         process.env.STEEM_USER, postsMetadata[i].author,
-                        postsMetadata[i].permlink, 9000);
+                        postsMetadata[i].permlink, 8000);
                   console.log(" - - - - upvoted with result: "+JSON.stringify(upvoteResult));
                 } catch (err) {
                   persistentLog(" - - - - ERROR voting on post: "+postsMetadata[i].permlink);
