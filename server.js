@@ -72,15 +72,16 @@ app.use(expressSession({
 // Start server
 app.listen(app.get('port'), function() {
   console.log('Node app is running on port', app.get('port'));
-  lib.initSteem();
-  if (!lib.hasFatalError()) {
-    console.log("Dashboard min requirements met, will be active on HTTPS");
-    loadFiles();
-  } else {
-    // kill node server to stop dashboard from showing and let owner know there is a problem without
-    // giving any information away
-    process.exit();
-  }
+  lib.initSteem(function() {
+    if (!lib.hasFatalError()) {
+      console.log("Dashboard min requirements met, will be active on HTTPS");
+      loadFiles();
+    } else {
+      // kill node server to stop dashboard from showing and let owner know there is a problem without
+      // giving any information away
+      process.exit();
+    }
+  });
 });
 
 module.exports = app;
@@ -340,8 +341,9 @@ function execStats(req, res) {
   lib.getPostsMetadataKeys(function(err, keys) {
     var html = "";
     if (err || keys == null || keys.length < 1) {
-      html = createMsgPageHTML("No stats available", "It looks like this is a fresh install of Voter. Please generate some stats by using it and then come back here to see the results in detail.");
-      res.status(200).send(html);
+      res.status(200).send(
+        createMsgPageHTML("No stats available", "It looks like this is a fresh install of Voter. Please generate some stats by using it and then come back here to see the results in detail.")
+      );
       console.log("No keys for /stats");
       return;
     } else {
@@ -372,27 +374,30 @@ function execStats(req, res) {
             dailyLikedPostObj = dailyLikedPosts[i];
           }
         }
-        if (dailyLikedPostObj == null) {
-          res.status(200).send(
-            createMsgPageHTML("Stats", "No data for daily liked posts, there may be an internal data inconsistency or corrupt key (err stage 2)"));
-          return;
-        }
-        var postsMetadata = dailyLikedPostObj.posts;
-        var html_list = "";
-        if (postsMetadata.length > 0) {
-          for (var i = 0 ; i < postsMetadata.length ; i++) {
-            html_list += "<tr><td><a href=\""+postsMetadata[i].url+"\">"+postsMetadata[i].title+"</a></td><td>"+postsMetadata[i].score+"</td>"
-              + "<td>"+(postsMetadata[i].vote ? "YES" : "NO")+"</td></tr>";
-          }
-        } else {
-          html_list = html_test_emptyList;
-        }
         var thisDate = moment(req.query.date_str);
+        var html_header = "";
+        if (dailyLikedPostObj == null) {
+          // #58, no votes cast today, is not system failure, display meaningful message
+          html_header = "No votes cast on " + (thisDate.format("MMM Do YYYY"));
+          html_list = html_test_emptyList;
+        } else {
+          html_header = "Votes cast on " + (thisDate.format("MMM Do YYYY"));
+          var postsMetadata = dailyLikedPostObj.posts;
+          var html_list = "";
+          if (postsMetadata.length > 0) {
+            for (var i = 0 ; i < postsMetadata.length ; i++) {
+              html_list += "<tr><td><a href=\""+postsMetadata[i].url+"\">"+postsMetadata[i].title+"</a></td><td>"+postsMetadata[i].score+"</td>"
+                + "<td>"+(postsMetadata[i].vote ? "YES" : "NO")+"</td></tr>";
+            }
+          } else {
+            html_list = html_test_emptyList;
+          }
+        }
         res.status(200).send(
           html_stats_run1
           + html
           + html_stats_run2
-          + "Daily likes overview for " + (thisDate.format("MMM Do YYYY"))
+          + html_header
           + html_stats_daily_likes_3
           + html_list
           + html_stats_daily_likes_4);
@@ -550,7 +555,7 @@ app.get("/stats-data-json", function(req, res) {
             var dateTime = moment_tz.tz(keys[i].date, lib.getConfigVars().TIME_ZONE);
             summary.push({
               date: keys[i].date,
-              date_str: (dateTime.format("MM/DD//YY HH:mm")),
+              date_str: (dateTime.format("MM/DD/YY HH:mm")),
               date_day: dateTime.date(),
               num_posts: postsMetadataList[i].postsMetadata.length,
               num_votes: numVotes
@@ -582,17 +587,17 @@ app.get("/get-config-vars", function(req, res) {
 
 function recursiveGetPostsMetadata(keys, index, callback, list) {
   redisClient.get(keys[index], function(err, result) {
-    if (err || result == null) {
-      callback(list);
-      return;
-    }
-    list.push(result);
     index++;
-    if (index >= keys.length) {
+    if (index > keys.length) {
       callback(list);
       return;
     }
-    recursiveGetPostsMetadata(keys, index, callback, list);
+    if (err || result === null) {
+      recursiveGetPostsMetadata(keys, index, callback, list);
+    } else {
+      list.push(result);
+      recursiveGetPostsMetadata(keys, index, callback, list);
+    }
   });
 }
 
@@ -686,7 +691,7 @@ app.get("/run-bot", function(req, res) {
       return;
     }
     lib.runBot(function(obj) {
-      console.log("lib.runBot returned: " + JSON.stringify(obj));
+      //console.log("lib.runBot returned: " + JSON.stringify(obj));
       if (obj) {
         if (req.query.json) {
           // return json directly
@@ -1156,7 +1161,12 @@ app.get("/edit-config", function(req, res) {
   }
   html_title += "</h3>"
   if (change) {
-    lib.updateConfigVars(configVars);
+    lib.updateConfigVars(configVars, function(err) {
+      //just log it
+      if (err) {
+        console.log(err)
+      }
+    });
   }
   res.status(200).send(
     html_edit_config1
@@ -1247,7 +1257,12 @@ app.post("/edit-config", bodyParser.urlencoded({extended: false}), function(req,
   }
   var html_title = "<h3 class=\"sub-header\">" + (change ? "Updated config vars" : "Nothing to update!") + "</h3>";
   if (change) {
-    lib.updateConfigVars(configVars);
+    lib.updateConfigVars(configVars, function(err) {
+      //just log it
+      if (err) {
+        console.log(err)
+      }
+    });
   }
   res.status(200).send(
     html_edit_config1
